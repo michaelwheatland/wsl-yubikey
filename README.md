@@ -1,10 +1,16 @@
 # wsl-yubikey
 
-Yubikey WSL Tool - Easily mount Fido2 USB devices into WSL
+A simple tray program that monitors, connects and disconnects a Yubikey or Fido2 Two factor authentication device from a windows PC to Windows Subsystem for Linux (WSL) image. So that you can use your 2FA within WSL for SSH login.
 
+You must install [usbipd-win](https://github.com/dorssel/usbipd-win) to use this tool.
+Once ISBIPD is installed, just copy the exe binary to wherever you want and run it. (It's fully portable)
+
+Yubikey WSL Tool - Easily mount Fido2 USB devices into WSL.
 Tray app (Windows) in `tray/` provides a status icon + attach/detach + auto-attach using `usbipd`.
 
-## Tray app (build/run)
+Feel free to contribute to this project by submitting a pull request. But I am not a programmer, so I am not maintining this actively.
+
+## Build Instructions
 
 Prereqs: Windows 11, usbipd-win installed, .NET 8 SDK.
 
@@ -36,12 +42,3 @@ Run: double-click exe. Tray icon uses:
 
 Auto-attach uses `usbipd bind` then `usbipd attach --wsl --auto-attach`.
 Log file sits beside exe: `wsl-yubikey-tray.log` (rotates at ~1MB to `.1`)
-
-## Commit + push
-
-```
-git status -sb
-git add -A
-git commit -m "feat: tray app"
-git push -u origin feat/initial
-```
