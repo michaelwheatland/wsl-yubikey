@@ -13,6 +13,9 @@ Write-Host "Publishing..."
 $publishDir = Join-Path $tray "bin/Release/net8.0-windows/$runtime/publish"
 $exeSrc = Join-Path $publishDir $exeName
 $exeDst = Join-Path $root $exeName
+$svgSrc = Join-Path $tray "key.svg"
+$svgDst = Join-Path $root "key.svg"
 
 Copy-Item $exeSrc $exeDst -Force
+if (Test-Path $svgSrc) { Copy-Item $svgSrc $svgDst -Force }
 Write-Host "Copied to $exeDst"

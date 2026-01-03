@@ -26,6 +26,7 @@ Root exe:
 ```
 WslYubikeyTray.exe
 ```
+Icon svg copied to repo root as `key.svg`. If missing, app falls back to dot icon.
 
 Run: double-click exe. Tray icon uses:
 - Green: attached
@@ -34,7 +35,7 @@ Run: double-click exe. Tray icon uses:
 - Gray: usbipd error
 
 Auto-attach uses `usbipd bind` then `usbipd attach --wsl --auto-attach`.
-Log file sits beside exe: `wsl-yubikey-tray.log`
+Log file sits beside exe: `wsl-yubikey-tray.log` (rotates at ~1MB to `.1`)
 
 ## Commit + push
 

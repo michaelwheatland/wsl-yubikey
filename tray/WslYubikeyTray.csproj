@@ -7,5 +7,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>WslYubikeyTray</AssemblyName>
     <RootNamespace>WslYubikeyTray</RootNamespace>
-  </PropertyGroup>
+</PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Svg" Version="3.4.4" />
+  </ItemGroup>
 </Project>

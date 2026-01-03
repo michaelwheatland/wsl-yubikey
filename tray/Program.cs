@@ -10,6 +10,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Timer = System.Windows.Forms.Timer;
 using System.Windows.Forms;
+using Svg;
 
 namespace WslYubikeyTray;
 
@@ -34,6 +35,7 @@ sealed record DeviceInfo(string BusId, DeviceState State, string Desc, string Li
 sealed record StatusSnapshot(
     UiStatus Status,
     List<DeviceInfo> Devices,
+    List<DeviceInfo> Matching,
     DeviceInfo? Primary,
     string Message
 );
@@ -67,6 +69,7 @@ static class Program
 sealed class TrayAppContext : ApplicationContext
 {
     const int PollMs = 2000;
+    const string AppTitle = "WSL 2FA Connector";
 
     readonly string[] _aliases =
     [
@@ -83,6 +86,7 @@ sealed class TrayAppContext : ApplicationContext
     readonly ToolStripMenuItem _detachItem;
     readonly ToolStripMenuItem _autoAttachItem;
     readonly ToolStripMenuItem _refreshItem;
+    readonly ToolStripMenuItem _aboutItem;
 
     readonly Icon _greenIcon;
     readonly Icon _yellowIcon;
@@ -106,20 +110,25 @@ sealed class TrayAppContext : ApplicationContext
         _autoAttachItem = new ToolStripMenuItem("Auto-attach", null, (_, _) => ToggleAutoAttach()) { CheckOnClick = true };
         _refreshItem = new ToolStripMenuItem("Refresh", null, (_, _) => _ = RefreshStatusAsync());
 
+        _aboutItem = new ToolStripMenuItem("About", null, (_, _) => ShowAbout());
+
         var menu = new ContextMenuStrip();
         menu.Items.AddRange([
+            new ToolStripMenuItem(AppTitle) { Enabled = false },
+            new ToolStripSeparator(),
             _attachItem,
             _detachItem,
             new ToolStripSeparator(),
             _autoAttachItem,
             _refreshItem,
             new ToolStripSeparator(),
+            _aboutItem,
             new ToolStripMenuItem("Exit", null, (_, _) => ExitThread()),
         ]);
 
         _icon = new NotifyIcon
         {
-            Text = "WSL YubiKey",
+            Text = AppTitle,
             Visible = true,
             ContextMenuStrip = menu,
             Icon = _grayIcon,
@@ -192,23 +201,27 @@ sealed class TrayAppContext : ApplicationContext
         _busy = true;
         try
         {
+            LogUtil.Log("attach requested");
             var snapshot = await GetStatusSnapshotAsync();
             if (snapshot.Primary == null)
             {
+                LogUtil.Log("attach failed: no matching device");
                 ShowBalloon("No matching device found.");
                 return;
             }
 
             var device = snapshot.Primary;
+            LogDevices("attach devices", snapshot.Devices);
             if (device.State == DeviceState.NotShared)
             {
                 LogUtil.Log($"bind {device.BusId}");
-                _ = await Task.Run(() => Usbipd.Run(["bind", $"--busid={device.BusId}"]));
+                var bindRes = await Task.Run(() => Usbipd.Run(["bind", $"--busid={device.BusId}"]));
+                LogUtil.Log($"bind exit {bindRes.ExitCode} {bindRes.Output}");
             }
 
             LogUtil.Log($"attach {device.BusId}");
             var res = await Task.Run(() => Usbipd.Run(["attach", "--wsl", "--auto-attach", "--busid", device.BusId]));
-            LogUtil.Log(res.Output);
+            LogUtil.Log($"attach exit {res.ExitCode} {res.Output}");
         }
         finally
         {
@@ -223,17 +236,20 @@ sealed class TrayAppContext : ApplicationContext
         _busy = true;
         try
         {
+            LogUtil.Log("detach requested");
             var snapshot = await GetStatusSnapshotAsync();
-            var attached = snapshot.Devices.FirstOrDefault(d => d.State == DeviceState.Attached);
+            var attached = snapshot.Matching.FirstOrDefault(d => d.State == DeviceState.Attached);
+            LogDevices("detach devices", snapshot.Devices);
             if (attached == null)
             {
+                LogUtil.Log("detach failed: no attached device");
                 ShowBalloon("No attached device found.");
                 return;
             }
 
             LogUtil.Log($"detach {attached.BusId}");
             var res = await Task.Run(() => Usbipd.Run(["detach", $"--busid={attached.BusId}"]));
-            LogUtil.Log(res.Output);
+            LogUtil.Log($"detach exit {res.ExitCode} {res.Output}");
         }
         finally
         {
@@ -248,15 +264,17 @@ sealed class TrayAppContext : ApplicationContext
         if (snapshot.Status != UiStatus.DetectedNotAttached || snapshot.Primary == null) return;
 
         var device = snapshot.Primary;
+        LogDevices("auto devices", snapshot.Devices);
         if (device.State == DeviceState.NotShared)
         {
             LogUtil.Log($"auto bind {device.BusId}");
-            _ = await Task.Run(() => Usbipd.Run(["bind", $"--busid={device.BusId}"]));
+            var bindRes = await Task.Run(() => Usbipd.Run(["bind", $"--busid={device.BusId}"]));
+            LogUtil.Log($"auto bind exit {bindRes.ExitCode} {bindRes.Output}");
         }
 
         LogUtil.Log($"auto attach {device.BusId}");
         var res = await Task.Run(() => Usbipd.Run(["attach", "--wsl", "--auto-attach", "--busid", device.BusId]));
-        LogUtil.Log(res.Output);
+        LogUtil.Log($"auto attach exit {res.ExitCode} {res.Output}");
     }
 
     async Task RefreshStatusAsync()
@@ -275,7 +293,7 @@ sealed class TrayAppContext : ApplicationContext
             _ => _grayIcon,
         };
 
-        var tooltip = snapshot.Message;
+        var tooltip = $"{AppTitle} - {snapshot.Message}";
         if (tooltip.Length > 63) tooltip = tooltip.Substring(0, 63);
         _icon.Text = tooltip;
     }
@@ -287,12 +305,51 @@ sealed class TrayAppContext : ApplicationContext
 
     void ShowBalloon(string msg)
     {
-        _icon.BalloonTipTitle = "WSL YubiKey";
+        _icon.BalloonTipTitle = AppTitle;
         _icon.BalloonTipText = msg;
         _icon.ShowBalloonTip(2000);
     }
 
+    static void LogDevices(string label, IEnumerable<DeviceInfo> devices)
+    {
+        foreach (var d in devices)
+        {
+            LogUtil.Log($"{label}: {d.Line}");
+        }
+    }
+
+    void ShowAbout()
+    {
+        var msg = "WSL 2FA Connector\n\n" +
+                  "Michael Wheatland\n" +
+                  "michael@wheatland.com.au\n" +
+                  "https://www.wheatland.com.au\n\n" +
+                  "Disclaimer: I'm not a programmer. Use at your own risk.";
+        MessageBox.Show(msg, AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Information);
+    }
+
     static Icon CreateStatusIcon(Color color)
+    {
+        var svgPath = Path.Combine(AppContext.BaseDirectory, "key.svg");
+        if (File.Exists(svgPath))
+        {
+            try
+            {
+                var doc = SvgDocument.Open(svgPath);
+                ApplySvgColor(doc, color);
+                using var bmp = doc.Draw(16, 16);
+                return IconFromBitmap(bmp);
+            }
+            catch (Exception ex)
+            {
+                LogUtil.Log("svg fail " + ex.Message);
+            }
+        }
+
+        return CreateDotIcon(color);
+    }
+
+    static Icon CreateDotIcon(Color color)
     {
         using var bmp = new Bitmap(16, 16);
         using var g = Graphics.FromImage(bmp);
@@ -302,11 +359,26 @@ sealed class TrayAppContext : ApplicationContext
         using var pen = new Pen(Color.FromArgb(110, 0, 0, 0));
         g.FillEllipse(brush, 2, 2, 12, 12);
         g.DrawEllipse(pen, 2, 2, 12, 12);
+        return IconFromBitmap(bmp);
+    }
+
+    static Icon IconFromBitmap(Bitmap bmp)
+    {
         var hIcon = bmp.GetHicon();
         var icon = Icon.FromHandle(hIcon);
         var clone = (Icon)icon.Clone();
         DestroyIcon(hIcon);
         return clone;
+    }
+
+    static void ApplySvgColor(SvgElement root, Color color)
+    {
+        var paint = new SvgColourServer(color);
+        foreach (var el in root.Descendants().OfType<SvgVisualElement>())
+        {
+            el.Fill = paint;
+            if (el.Stroke != null) el.Stroke = paint;
+        }
     }
 
     [DllImport("user32.dll", SetLastError = true)]
@@ -316,13 +388,32 @@ sealed class TrayAppContext : ApplicationContext
 static class LogUtil
 {
     const string LogFileName = "wsl-yubikey-tray.log";
+    const long MaxBytes = 1_000_000;
     static string LogPath => Path.Combine(AppContext.BaseDirectory, LogFileName);
 
     public static void Log(string msg)
     {
         try
         {
+            RotateIfNeeded();
             File.AppendAllText(LogPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {msg}\r\n");
+        }
+        catch
+        {
+        }
+    }
+
+    static void RotateIfNeeded()
+    {
+        try
+        {
+            var info = new FileInfo(LogPath);
+            if (info.Exists && info.Length > MaxBytes)
+            {
+                var backup = LogPath + ".1";
+                if (File.Exists(backup)) File.Delete(backup);
+                File.Move(LogPath, backup);
+            }
         }
         catch
         {
@@ -339,7 +430,7 @@ static class Usbipd
         var list = Run(["list"]);
         if (list.ExitCode != 0 && list.Output.Contains("not recognized", StringComparison.OrdinalIgnoreCase))
         {
-            return new StatusSnapshot(UiStatus.Error, [], null, "usbipd missing");
+            return new StatusSnapshot(UiStatus.Error, [], [], null, "usbipd missing");
         }
 
         var devices = ParseDevices(list.Output);
@@ -351,13 +442,13 @@ static class Usbipd
 
         if (matching.Count == 0)
         {
-            return new StatusSnapshot(UiStatus.NotDetected, devices, null, "2FA device not detected");
+            return new StatusSnapshot(UiStatus.NotDetected, devices, matching, null, "2FA device not detected");
         }
 
         var attached = matching.FirstOrDefault(d => d.State == DeviceState.Attached);
         if (attached != null)
         {
-            return new StatusSnapshot(UiStatus.Attached, devices, attached, $"Attached {attached.BusId}");
+            return new StatusSnapshot(UiStatus.Attached, devices, matching, attached, $"Attached {attached.BusId}");
         }
 
         var primary = matching[0];
@@ -367,7 +458,7 @@ static class Usbipd
             DeviceState.Shared => "shared",
             _ => "detected",
         };
-        return new StatusSnapshot(UiStatus.DetectedNotAttached, devices, primary, $"Detected {primary.BusId} ({stateLabel})");
+        return new StatusSnapshot(UiStatus.DetectedNotAttached, devices, matching, primary, $"Detected {primary.BusId} ({stateLabel})");
     }
 
     public static List<DeviceInfo> ParseDevices(string output)
@@ -419,7 +510,11 @@ static class Usbipd
 
             var stdout = proc.StandardOutput.ReadToEnd();
             var stderr = proc.StandardError.ReadToEnd();
-            proc.WaitForExit(5000);
+            if (!proc.WaitForExit(5000))
+            {
+                try { proc.Kill(true); } catch { }
+                return (-1, "usbipd timed out");
+            }
 
             var combined = string.Concat(stdout, stderr);
             return (proc.ExitCode, combined.Trim());
