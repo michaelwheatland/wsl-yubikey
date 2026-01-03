@@ -18,6 +18,15 @@ Exe output:
 tray/bin/Release/net8.0-windows/win-x64/publish/WslYubikeyTray.exe
 ```
 
+Build + copy exe to repo root:
+```
+.\build.ps1
+```
+Root exe:
+```
+WslYubikeyTray.exe
+```
+
 Run: double-click exe. Tray icon uses:
 - Green: attached
 - Yellow: detected not attached
@@ -25,6 +34,7 @@ Run: double-click exe. Tray icon uses:
 - Gray: usbipd error
 
 Auto-attach uses `usbipd bind` then `usbipd attach --wsl --auto-attach`.
+Log file sits beside exe: `wsl-yubikey-tray.log`
 
 ## Commit + push
 

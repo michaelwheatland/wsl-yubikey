@@ -43,15 +43,30 @@ static class Program
     [STAThread]
     static void Main()
     {
+        LogUtil.Log("start");
+        Application.ThreadException += (_, e) => LogUtil.Log("ui-ex " + e.Exception);
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => LogUtil.Log("fatal " + e.ExceptionObject);
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            LogUtil.Log("task-ex " + e.Exception);
+            e.SetObserved();
+        };
+
         ApplicationConfiguration.Initialize();
-        Application.Run(new TrayAppContext());
+        try
+        {
+            Application.Run(new TrayAppContext());
+        }
+        catch (Exception ex)
+        {
+            LogUtil.Log("fatal " + ex);
+        }
     }
 }
 
 sealed class TrayAppContext : ApplicationContext
 {
     const int PollMs = 2000;
-    const string LogFileName = "wsl-yubikey-tray.log";
 
     readonly string[] _aliases =
     [
@@ -80,6 +95,7 @@ sealed class TrayAppContext : ApplicationContext
 
     public TrayAppContext()
     {
+        LogUtil.Log("tray init");
         _greenIcon = CreateStatusIcon(Color.FromArgb(0, 180, 0));
         _yellowIcon = CreateStatusIcon(Color.FromArgb(255, 185, 0));
         _redIcon = CreateStatusIcon(Color.FromArgb(200, 0, 0));
@@ -152,7 +168,7 @@ sealed class TrayAppContext : ApplicationContext
     {
         _autoAttachEnabled = !_autoAttachEnabled;
         _autoAttachItem.Checked = _autoAttachEnabled;
-        Log($"auto-attach {( _autoAttachEnabled ? "on" : "off")}");
+        LogUtil.Log($"auto-attach {( _autoAttachEnabled ? "on" : "off")}");
     }
 
     void ToggleAttachDetach()
@@ -186,13 +202,13 @@ sealed class TrayAppContext : ApplicationContext
             var device = snapshot.Primary;
             if (device.State == DeviceState.NotShared)
             {
-                Log($"bind {device.BusId}");
+                LogUtil.Log($"bind {device.BusId}");
                 _ = await Task.Run(() => Usbipd.Run(["bind", $"--busid={device.BusId}"]));
             }
 
-            Log($"attach {device.BusId}");
+            LogUtil.Log($"attach {device.BusId}");
             var res = await Task.Run(() => Usbipd.Run(["attach", "--wsl", "--auto-attach", "--busid", device.BusId]));
-            Log(res.Output);
+            LogUtil.Log(res.Output);
         }
         finally
         {
@@ -215,9 +231,9 @@ sealed class TrayAppContext : ApplicationContext
                 return;
             }
 
-            Log($"detach {attached.BusId}");
+            LogUtil.Log($"detach {attached.BusId}");
             var res = await Task.Run(() => Usbipd.Run(["detach", $"--busid={attached.BusId}"]));
-            Log(res.Output);
+            LogUtil.Log(res.Output);
         }
         finally
         {
@@ -234,13 +250,13 @@ sealed class TrayAppContext : ApplicationContext
         var device = snapshot.Primary;
         if (device.State == DeviceState.NotShared)
         {
-            Log($"auto bind {device.BusId}");
+            LogUtil.Log($"auto bind {device.BusId}");
             _ = await Task.Run(() => Usbipd.Run(["bind", $"--busid={device.BusId}"]));
         }
 
-        Log($"auto attach {device.BusId}");
+        LogUtil.Log($"auto attach {device.BusId}");
         var res = await Task.Run(() => Usbipd.Run(["attach", "--wsl", "--auto-attach", "--busid", device.BusId]));
-        Log(res.Output);
+        LogUtil.Log(res.Output);
     }
 
     async Task RefreshStatusAsync()
@@ -293,9 +309,16 @@ sealed class TrayAppContext : ApplicationContext
         return clone;
     }
 
+    [DllImport("user32.dll", SetLastError = true)]
+    static extern bool DestroyIcon(IntPtr hIcon);
+}
+
+static class LogUtil
+{
+    const string LogFileName = "wsl-yubikey-tray.log";
     static string LogPath => Path.Combine(AppContext.BaseDirectory, LogFileName);
 
-    static void Log(string msg)
+    public static void Log(string msg)
     {
         try
         {
@@ -305,9 +328,6 @@ sealed class TrayAppContext : ApplicationContext
         {
         }
     }
-
-    [DllImport("user32.dll", SetLastError = true)]
-    static extern bool DestroyIcon(IntPtr hIcon);
 }
 
 static class Usbipd
