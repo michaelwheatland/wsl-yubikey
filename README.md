@@ -24,14 +24,19 @@ Exe output:
 tray/bin/Release/net8.0-windows/win-x64/publish/WslYubikeyTray.exe
 ```
 
-Build + copy exe to repo root:
+Build + copy exe to repo root (small, requires .NET 8 Desktop Runtime):
 ```
 .\build.ps1
+```
+Build + copy exe to repo root (self-contained, larger):
+```
+.\build.ps1 -SelfContained
 ```
 Root exe:
 ```
 WslYubikeyTray.exe
 ```
+Note: GitHub rejects blobs >100MB. Use the small build for GitHub mirrors.
 Icon svg copied to repo root as `key.svg`. If missing, app falls back to dot icon.
 
 Run: double-click exe. Tray icon uses:
