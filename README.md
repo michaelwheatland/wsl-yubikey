@@ -7,6 +7,7 @@ Once USBIPD is installed, just copy the exe binary to wherever you want and run 
 
 Yubikey WSL Tool - Easily mount Fido2 USB devices into WSL.
 Tray app (Windows) in `tray/` provides a status icon + attach/detach + auto-attach using `usbipd`.
+Also supports mounting Windows drive letters into WSL at `/mnt/x` (configurable), with manual toggles and optional auto-mount on new drives.
 
 Feel free to contribute to this project by submitting a pull request. But I am not a programmer, so I am not maintining this actively.
 
@@ -50,3 +51,10 @@ Run: double-click exe. Tray icon uses:
 
 Auto-attach uses `usbipd bind` then `usbipd attach --wsl --auto-attach`.
 Log file sits beside exe: `wsl-yubikey-tray.log` (rotates at ~1MB to `.1`)
+
+Drive mounts:
+- Menu: Drive mount points > click a drive letter to mount/unmount
+- Auto-mount new drives (not on startup) + auto-unmount on removal
+- Settings stored in `settings.json` beside exe:
+  - `WslDistro` (blank = default)
+  - `MountBase` (default `/mnt`)
