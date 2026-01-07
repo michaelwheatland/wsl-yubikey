@@ -9,4 +9,4 @@
 - [x] Add tray UI items for drives + toggles
 - [x] Update README with new feature
 - [x] Run lint/tests if available (not found)
-- [ ] Commit changes
+- [x] Commit changes
