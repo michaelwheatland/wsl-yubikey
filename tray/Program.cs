@@ -969,7 +969,7 @@ static class WslUtil
         foreach (var line in lines)
         {
             var trimmed = line.Trim();
-            if (trimmed.Replace(" ", "").Equals("NAMESTATEVERSION", StringComparison.OrdinalIgnoreCase)) continue;
+            if (IsHeaderLine(trimmed)) continue;
             if (trimmed.StartsWith("NAME", StringComparison.OrdinalIgnoreCase)) continue;
             var cols = Regex.Split(trimmed, @"\s{2,}");
             if (cols.Length < 2) continue;
@@ -981,7 +981,7 @@ static class WslUtil
         foreach (var line in lines)
         {
             var trimmed = line.Trim();
-            if (trimmed.Replace(" ", "").Equals("NAMESTATEVERSION", StringComparison.OrdinalIgnoreCase)) continue;
+            if (IsHeaderLine(trimmed)) continue;
             if (trimmed.StartsWith("NAME", StringComparison.OrdinalIgnoreCase)) continue;
             var parts = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length >= 2)
@@ -995,7 +995,7 @@ static class WslUtil
         foreach (var line in lines)
         {
             var trimmed = line.Trim();
-            if (trimmed.Replace(" ", "").Equals("NAMESTATEVERSION", StringComparison.OrdinalIgnoreCase)) continue;
+            if (IsHeaderLine(trimmed)) continue;
             if (trimmed.StartsWith("NAME", StringComparison.OrdinalIgnoreCase)) continue;
             var cols = Regex.Split(trimmed, @"\s{2,}");
             if (cols.Length < 1) continue;
@@ -1004,6 +1004,13 @@ static class WslUtil
         }
 
         return null;
+    }
+
+    static bool IsHeaderLine(string line)
+    {
+        if (string.IsNullOrWhiteSpace(line)) return false;
+        var noSpace = new string(line.Where(c => !char.IsWhiteSpace(c)).ToArray());
+        return noSpace.Equals("NAMESTATEVERSION", StringComparison.OrdinalIgnoreCase);
     }
 
     static (int ExitCode, string Output) RunWslRaw(string[] args)
