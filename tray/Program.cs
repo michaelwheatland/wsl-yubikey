@@ -796,6 +796,7 @@ static class WslUtil
         var res = RunWsl(settings, ["sh", "-lc", "findmnt -rn -t drvfs -o TARGET"]);
         if (res.ExitCode == 0 && !string.IsNullOrWhiteSpace(res.Output))
         {
+            LogUtil.Log("drvfs findmnt ok: " + res.Output.Replace("\n", "|"));
             var targets = res.Output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
             foreach (var target in targets)
             {
@@ -810,6 +811,7 @@ static class WslUtil
         var fallback = RunWsl(settings, ["sh", "-lc", "grep -i ' drvfs ' /proc/mounts"]);
         if (fallback.ExitCode != 0 || string.IsNullOrWhiteSpace(fallback.Output)) return result;
 
+        LogUtil.Log("drvfs mounts fallback: " + fallback.Output.Replace("\n", "|"));
         var lines = fallback.Output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
         foreach (var line in lines)
         {
@@ -866,6 +868,9 @@ static class WslUtil
     {
         try
         {
+            var cmd = BuildWslCommand(settings, args, runAsRoot);
+            LogUtil.Log("wsl run " + cmd);
+
             var psi = new ProcessStartInfo
             {
                 FileName = "wsl",
@@ -898,16 +903,42 @@ static class WslUtil
             if (!proc.WaitForExit(8000))
             {
                 try { proc.Kill(true); } catch { }
-                return (-1, "wsl timed out");
+                var timeout = "wsl timed out";
+                LogUtil.Log("wsl exit -1 " + timeout);
+                return (-1, timeout);
             }
 
             var combined = string.Concat(stdout, stderr);
+            LogUtil.Log($"wsl exit {proc.ExitCode} {combined.Trim()}");
             return (proc.ExitCode, combined.Trim());
         }
         catch (Exception ex)
         {
+            LogUtil.Log("wsl exception " + ex.Message);
             return (-1, ex.Message);
         }
+    }
+
+    static string BuildWslCommand(AppSettings settings, string[] args, bool runAsRoot)
+    {
+        var parts = new List<string> { "wsl" };
+        if (runAsRoot) parts.AddRange(["-u", "root"]);
+        if (!string.IsNullOrWhiteSpace(settings.WslDistro))
+        {
+            parts.AddRange(["-d", settings.WslDistro!.Trim(), "--"]);
+        }
+        parts.AddRange(args.Select(QuoteArg));
+        return string.Join(" ", parts);
+    }
+
+    static string QuoteArg(string arg)
+    {
+        if (string.IsNullOrWhiteSpace(arg)) return "\"\"";
+        if (arg.Contains(' ') || arg.Contains('"'))
+        {
+            return "\"" + arg.Replace("\"", "\\\"") + "\"";
+        }
+        return arg;
     }
 }
 

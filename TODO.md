@@ -21,4 +21,5 @@
 - [x] Add slow drive polling with burst after actions
 - [x] Use findmnt for drvfs detection
 - [x] Copy key.svg to publish output
+- [x] Add detailed wsl command logging
 - [x] Fix build error: ShowCheckMargin cast
