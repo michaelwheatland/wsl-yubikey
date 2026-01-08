@@ -22,4 +22,5 @@
 - [x] Use findmnt for drvfs detection
 - [x] Copy key.svg to publish output
 - [x] Add detailed wsl command logging
+- [x] Fix wsl command separator when no distro set
 - [x] Fix build error: ShowCheckMargin cast

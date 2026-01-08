@@ -890,9 +890,9 @@ static class WslUtil
             {
                 psi.ArgumentList.Add("-d");
                 psi.ArgumentList.Add(settings.WslDistro.Trim());
-                psi.ArgumentList.Add("--");
             }
 
+            if (args.Length > 0) psi.ArgumentList.Add("--");
             foreach (var arg in args) psi.ArgumentList.Add(arg);
 
             using var proc = Process.Start(psi);
@@ -925,8 +925,9 @@ static class WslUtil
         if (runAsRoot) parts.AddRange(["-u", "root"]);
         if (!string.IsNullOrWhiteSpace(settings.WslDistro))
         {
-            parts.AddRange(["-d", settings.WslDistro!.Trim(), "--"]);
+            parts.AddRange(["-d", settings.WslDistro!.Trim()]);
         }
+        if (args.Length > 0) parts.Add("--");
         parts.AddRange(args.Select(QuoteArg));
         return string.Join(" ", parts);
     }
