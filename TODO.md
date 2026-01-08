@@ -27,5 +27,5 @@
 - [x] Log settings at startup
 - [x] Auto-select running WSL distro
 - [x] Fix parsing of wsl -l -v header
-- [x] Remove controls from distro names (nulls from wsl output)
+- [x] Detect drvfs mounts even when kernel reports type `9p`
 - [x] Fix build error: ShowCheckMargin cast

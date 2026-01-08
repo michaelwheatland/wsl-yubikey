@@ -796,60 +796,41 @@ static class WslUtil
     {
         var result = new HashSet<char>();
         var mountBase = SettingsStore.NormalizeMountBase(settings.MountBase);
-        var res = RunWsl(settings, ["sh", "-lc", "mount -t drvfs"], distroOverride: distroOverride);
-        if (res.ExitCode == 0 && !string.IsNullOrWhiteSpace(res.Output))
-        {
-            LogUtil.Log("drvfs mount list: " + res.Output.Replace("\n", "|"));
-            ParseDrvfsMountOutput(res.Output, mountBase, result);
-            return result;
-        }
+        var res = RunWsl(settings, ["sh", "-lc", "cat /proc/mounts"], distroOverride: distroOverride);
+        if (res.ExitCode != 0 || string.IsNullOrWhiteSpace(res.Output)) return result;
 
-        var findmnt = RunWsl(settings, ["sh", "-lc", "findmnt -rn -t drvfs -o TARGET"], distroOverride: distroOverride);
-        if (findmnt.ExitCode == 0 && !string.IsNullOrWhiteSpace(findmnt.Output))
-        {
-            LogUtil.Log("drvfs findmnt ok: " + findmnt.Output.Replace("\n", "|"));
-            var targets = findmnt.Output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
-            foreach (var target in targets)
-            {
-                var mountPoint = target.Trim();
-                if (!mountPoint.StartsWith(mountBase + "/", StringComparison.OrdinalIgnoreCase)) continue;
-                var letter = char.ToUpperInvariant(mountPoint.Substring(mountBase.Length + 1).FirstOrDefault());
-                if (letter >= 'A' && letter <= 'Z') result.Add(letter);
-            }
-            return result;
-        }
-
-        var fallback = RunWsl(settings, ["sh", "-lc", "grep -i ' drvfs ' /proc/mounts"], distroOverride: distroOverride);
-        if (fallback.ExitCode != 0 || string.IsNullOrWhiteSpace(fallback.Output)) return result;
-
-        LogUtil.Log("drvfs mounts fallback: " + fallback.Output.Replace("\n", "|"));
-        var lines = fallback.Output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
-        foreach (var line in lines)
-        {
-            var parts = line.Split(' ');
-            if (parts.Length < 2) continue;
-            var mountPoint = parts[1];
-            if (!mountPoint.StartsWith(mountBase + "/", StringComparison.OrdinalIgnoreCase)) continue;
-            var letter = char.ToUpperInvariant(mountPoint.Substring(mountBase.Length + 1).FirstOrDefault());
-            if (letter >= 'A' && letter <= 'Z') result.Add(letter);
-        }
-
+        LogUtil.Log("drvfs mounts from /proc/mounts: " + res.Output.Replace("\n", "|"));
+        ParseMounts(res.Output, mountBase, result);
         return result;
     }
 
-    static void ParseDrvfsMountOutput(string output, string mountBase, HashSet<char> result)
+    static void ParseMounts(string output, string mountBase, HashSet<char> result)
     {
         var lines = output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
         foreach (var line in lines)
         {
-            var onIdx = line.IndexOf(" on ", StringComparison.OrdinalIgnoreCase);
-            var typeIdx = line.IndexOf(" type ", StringComparison.OrdinalIgnoreCase);
-            if (onIdx < 0 || typeIdx < 0 || typeIdx <= onIdx + 4) continue;
-            var mountPoint = line.Substring(onIdx + 4, typeIdx - (onIdx + 4));
+            var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 4) continue;
+            var mountPoint = parts[1];
             if (!mountPoint.StartsWith(mountBase + "/", StringComparison.OrdinalIgnoreCase)) continue;
+            var fsType = parts[2];
+            var options = parts[3];
+            if (!IsDrvfsMount(fsType, options)) continue;
             var letter = char.ToUpperInvariant(mountPoint.Substring(mountBase.Length + 1).FirstOrDefault());
-            if (letter >= 'A' && letter <= 'Z') result.Add(letter);
+            if (letter < 'A' || letter > 'Z') continue;
+            result.Add(letter);
         }
+    }
+
+    static bool IsDrvfsMount(string fsType, string options)
+    {
+        if (fsType.Equals("drvfs", StringComparison.OrdinalIgnoreCase)) return true;
+        if (fsType.Equals("9p", StringComparison.OrdinalIgnoreCase) && options.Contains("aname=drvfs", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return false;
     }
 
     public static void MountDrive(char letter, AppSettings settings, string? distroOverride)
