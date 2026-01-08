@@ -25,4 +25,5 @@
 - [x] Fix wsl command separator when no distro set
 - [x] Improve drvfs detection via mount -t drvfs
 - [x] Log settings at startup
+- [x] Auto-select running WSL distro
 - [x] Fix build error: ShowCheckMargin cast

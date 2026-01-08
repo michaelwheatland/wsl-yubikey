@@ -122,13 +122,15 @@ sealed class TrayAppContext : ApplicationContext
     HashSet<char> _mountedDrives = new();
     bool _driveInitialized;
     DateTime _driveBurstUntil = DateTime.MinValue;
+    string? _activeDistro;
 
     public TrayAppContext()
     {
         LogUtil.Log("tray init");
         _settings = SettingsStore.Load();
         _autoAttachEnabled = _settings.AutoAttachUsb;
-        LogUtil.Log($"settings distro='{_settings.WslDistro ?? ""}' mountBase='{_settings.MountBase}'");
+        _activeDistro = WslUtil.ResolveActiveDistro(_settings.WslDistro);
+        LogUtil.Log($"settings distro='{_settings.WslDistro ?? ""}' active='{_activeDistro ?? ""}' mountBase='{_settings.MountBase}'");
         _greenIcon = CreateStatusIcon("icon-connected.png", Color.FromArgb(0, 180, 0));
         _yellowIcon = CreateStatusIcon("icon-ready.png", Color.FromArgb(255, 185, 0));
         _redIcon = CreateStatusIcon("icon-none.png", Color.FromArgb(200, 0, 0));
@@ -395,7 +397,7 @@ sealed class TrayAppContext : ApplicationContext
         if (force || (now - _lastWslMountPoll).TotalMilliseconds >= mountPollMs)
         {
             _lastWslMountPoll = now;
-            _mountedDrives = await Task.Run(() => WslUtil.GetMountedDrvfsLetters(_settings));
+            _mountedDrives = await Task.Run(() => WslUtil.GetMountedDrvfsLetters(_settings, _activeDistro));
         }
 
         UpdateDriveMenu(present, _mountedDrives);
@@ -412,9 +414,9 @@ sealed class TrayAppContext : ApplicationContext
         {
             foreach (var letter in added)
             {
-                await Task.Run(() => WslUtil.MountDrive(letter, _settings));
+                await Task.Run(() => WslUtil.MountDrive(letter, _settings, _activeDistro));
             }
-            _mountedDrives = await Task.Run(() => WslUtil.GetMountedDrvfsLetters(_settings));
+            _mountedDrives = await Task.Run(() => WslUtil.GetMountedDrvfsLetters(_settings, _activeDistro));
             _driveBurstUntil = DateTime.UtcNow.AddSeconds(DriveBurstSeconds);
         }
 
@@ -424,10 +426,10 @@ sealed class TrayAppContext : ApplicationContext
             {
                 if (_mountedDrives.Contains(letter))
                 {
-                    await Task.Run(() => WslUtil.UnmountDrive(letter, _settings));
+                    await Task.Run(() => WslUtil.UnmountDrive(letter, _settings, _activeDistro));
                 }
             }
-            _mountedDrives = await Task.Run(() => WslUtil.GetMountedDrvfsLetters(_settings));
+            _mountedDrives = await Task.Run(() => WslUtil.GetMountedDrvfsLetters(_settings, _activeDistro));
             _driveBurstUntil = DateTime.UtcNow.AddSeconds(DriveBurstSeconds);
         }
 
@@ -467,15 +469,15 @@ sealed class TrayAppContext : ApplicationContext
             if (mounted)
             {
                 LogUtil.Log($"drive unmount {letter}:");
-                await Task.Run(() => WslUtil.UnmountDrive(letter, _settings));
+                await Task.Run(() => WslUtil.UnmountDrive(letter, _settings, _activeDistro));
             }
             else
             {
                 LogUtil.Log($"drive mount {letter}:");
-                await Task.Run(() => WslUtil.MountDrive(letter, _settings));
+                await Task.Run(() => WslUtil.MountDrive(letter, _settings, _activeDistro));
             }
 
-            _mountedDrives = await Task.Run(() => WslUtil.GetMountedDrvfsLetters(_settings));
+            _mountedDrives = await Task.Run(() => WslUtil.GetMountedDrvfsLetters(_settings, _activeDistro));
             UpdateDriveMenu(DriveUtil.GetPresentDriveLetters(), _mountedDrives);
             _driveBurstUntil = DateTime.UtcNow.AddSeconds(DriveBurstSeconds);
         }
@@ -790,11 +792,11 @@ static class DriveUtil
 
 static class WslUtil
 {
-    public static HashSet<char> GetMountedDrvfsLetters(AppSettings settings)
+    public static HashSet<char> GetMountedDrvfsLetters(AppSettings settings, string? distroOverride)
     {
         var result = new HashSet<char>();
         var mountBase = SettingsStore.NormalizeMountBase(settings.MountBase);
-        var res = RunWsl(settings, ["sh", "-lc", "mount -t drvfs"]);
+        var res = RunWsl(settings, ["sh", "-lc", "mount -t drvfs"], distroOverride: distroOverride);
         if (res.ExitCode == 0 && !string.IsNullOrWhiteSpace(res.Output))
         {
             LogUtil.Log("drvfs mount list: " + res.Output.Replace("\n", "|"));
@@ -802,7 +804,7 @@ static class WslUtil
             return result;
         }
 
-        var findmnt = RunWsl(settings, ["sh", "-lc", "findmnt -rn -t drvfs -o TARGET"]);
+        var findmnt = RunWsl(settings, ["sh", "-lc", "findmnt -rn -t drvfs -o TARGET"], distroOverride: distroOverride);
         if (findmnt.ExitCode == 0 && !string.IsNullOrWhiteSpace(findmnt.Output))
         {
             LogUtil.Log("drvfs findmnt ok: " + findmnt.Output.Replace("\n", "|"));
@@ -817,7 +819,7 @@ static class WslUtil
             return result;
         }
 
-        var fallback = RunWsl(settings, ["sh", "-lc", "grep -i ' drvfs ' /proc/mounts"]);
+        var fallback = RunWsl(settings, ["sh", "-lc", "grep -i ' drvfs ' /proc/mounts"], distroOverride: distroOverride);
         if (fallback.ExitCode != 0 || string.IsNullOrWhiteSpace(fallback.Output)) return result;
 
         LogUtil.Log("drvfs mounts fallback: " + fallback.Output.Replace("\n", "|"));
@@ -850,14 +852,14 @@ static class WslUtil
         }
     }
 
-    public static void MountDrive(char letter, AppSettings settings)
+    public static void MountDrive(char letter, AppSettings settings, string? distroOverride)
     {
         var mountBase = SettingsStore.NormalizeMountBase(settings.MountBase);
         var mountPoint = $"{mountBase}/{char.ToLowerInvariant(letter)}";
         var mountPointEsc = EscapeSh(mountPoint);
         var drive = $"{char.ToUpperInvariant(letter)}:";
         var driveEsc = EscapeSh(drive);
-        var prep = RunWsl(settings, ["sh", "-lc", $"mkdir -p {mountPointEsc}"], runAsRoot: true);
+        var prep = RunWsl(settings, ["sh", "-lc", $"mkdir -p {mountPointEsc}"], runAsRoot: true, distroOverride: distroOverride);
         if (prep.ExitCode != 0)
         {
             LogUtil.Log($"mkdir {letter}: exit {prep.ExitCode} {prep.Output}");
@@ -865,18 +867,18 @@ static class WslUtil
         }
 
         var cmd = $"mount -t drvfs {driveEsc} {mountPointEsc}";
-        var res = RunWsl(settings, ["sh", "-lc", cmd], runAsRoot: true);
+        var res = RunWsl(settings, ["sh", "-lc", cmd], runAsRoot: true, distroOverride: distroOverride);
         LogUtil.Log($"mount {letter}: exit {res.ExitCode} {res.Output}");
     }
 
-    public static void UnmountDrive(char letter, AppSettings settings)
+    public static void UnmountDrive(char letter, AppSettings settings, string? distroOverride)
     {
         var mountBase = SettingsStore.NormalizeMountBase(settings.MountBase);
         var mountPoint = $"{mountBase}/{char.ToLowerInvariant(letter)}";
         var mountPointEsc = EscapeSh(mountPoint);
-        var res = RunWsl(settings, ["sh", "-lc", $"umount {mountPointEsc}"], runAsRoot: true);
+        var res = RunWsl(settings, ["sh", "-lc", $"umount {mountPointEsc}"], runAsRoot: true, distroOverride: distroOverride);
         LogUtil.Log($"umount {letter}: exit {res.ExitCode} {res.Output}");
-        var cleanup = RunWsl(settings, ["sh", "-lc", $"rmdir {mountPointEsc}"], runAsRoot: true);
+        var cleanup = RunWsl(settings, ["sh", "-lc", $"rmdir {mountPointEsc}"], runAsRoot: true, distroOverride: distroOverride);
         if (cleanup.ExitCode != 0 && !string.IsNullOrWhiteSpace(cleanup.Output))
         {
             LogUtil.Log($"rmdir {letter}: exit {cleanup.ExitCode} {cleanup.Output}");
@@ -888,11 +890,11 @@ static class WslUtil
         return "'" + value.Replace("'", "'\"'\"'") + "'";
     }
 
-    public static (int ExitCode, string Output) RunWsl(AppSettings settings, string[] args, bool runAsRoot = false)
+    public static (int ExitCode, string Output) RunWsl(AppSettings settings, string[] args, bool runAsRoot = false, string? distroOverride = null)
     {
         try
         {
-            var cmd = BuildWslCommand(settings, args, runAsRoot);
+            var cmd = BuildWslCommand(settings, args, runAsRoot, distroOverride);
             LogUtil.Log("wsl run " + cmd);
 
             var psi = new ProcessStartInfo
@@ -910,10 +912,11 @@ static class WslUtil
                 psi.ArgumentList.Add("root");
             }
 
-            if (!string.IsNullOrWhiteSpace(settings.WslDistro))
+            var distro = !string.IsNullOrWhiteSpace(distroOverride) ? distroOverride : settings.WslDistro;
+            if (!string.IsNullOrWhiteSpace(distro))
             {
                 psi.ArgumentList.Add("-d");
-                psi.ArgumentList.Add(settings.WslDistro.Trim());
+                psi.ArgumentList.Add(distro.Trim());
             }
 
             if (args.Length > 0) psi.ArgumentList.Add("--");
@@ -943,17 +946,82 @@ static class WslUtil
         }
     }
 
-    static string BuildWslCommand(AppSettings settings, string[] args, bool runAsRoot)
+    static string BuildWslCommand(AppSettings settings, string[] args, bool runAsRoot, string? distroOverride)
     {
         var parts = new List<string> { "wsl" };
         if (runAsRoot) parts.AddRange(["-u", "root"]);
-        if (!string.IsNullOrWhiteSpace(settings.WslDistro))
+        var distro = !string.IsNullOrWhiteSpace(distroOverride) ? distroOverride : settings.WslDistro;
+        if (!string.IsNullOrWhiteSpace(distro))
         {
-            parts.AddRange(["-d", settings.WslDistro!.Trim()]);
+            parts.AddRange(["-d", distro!.Trim()]);
         }
         if (args.Length > 0) parts.Add("--");
         parts.AddRange(args.Select(QuoteArg));
         return string.Join(" ", parts);
+    }
+
+    public static string? ResolveActiveDistro(string? configured)
+    {
+        if (!string.IsNullOrWhiteSpace(configured)) return configured;
+        var res = RunWslRaw(["-l", "-v"]);
+        if (res.ExitCode != 0 || string.IsNullOrWhiteSpace(res.Output)) return null;
+        var lines = res.Output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
+        foreach (var line in lines)
+        {
+            var trimmed = line.Trim();
+            if (trimmed.StartsWith("NAME", StringComparison.OrdinalIgnoreCase)) continue;
+            var cols = Regex.Split(trimmed, @"\s{2,}");
+            if (cols.Length < 2) continue;
+            var name = cols[0].TrimStart('*').Trim();
+            var state = cols[1].Trim();
+            if (state.Equals("Running", StringComparison.OrdinalIgnoreCase)) return name;
+        }
+
+        foreach (var line in lines)
+        {
+            var trimmed = line.Trim();
+            if (trimmed.StartsWith("NAME", StringComparison.OrdinalIgnoreCase)) continue;
+            var cols = Regex.Split(trimmed, @"\s{2,}");
+            if (cols.Length < 1) continue;
+            var name = cols[0].TrimStart('*').Trim();
+            if (!string.IsNullOrWhiteSpace(name)) return name;
+        }
+
+        return null;
+    }
+
+    static (int ExitCode, string Output) RunWslRaw(string[] args)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = "wsl",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+
+            foreach (var arg in args) psi.ArgumentList.Add(arg);
+            using var proc = Process.Start(psi);
+            if (proc == null) return (-1, "wsl failed to start");
+
+            var stdout = proc.StandardOutput.ReadToEnd();
+            var stderr = proc.StandardError.ReadToEnd();
+            if (!proc.WaitForExit(5000))
+            {
+                try { proc.Kill(true); } catch { }
+                return (-1, "wsl timed out");
+            }
+
+            var combined = string.Concat(stdout, stderr);
+            return (proc.ExitCode, combined.Trim());
+        }
+        catch (Exception ex)
+        {
+            return (-1, ex.Message);
+        }
     }
 
     static string QuoteArg(string arg)
