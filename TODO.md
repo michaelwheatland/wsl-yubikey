@@ -10,3 +10,6 @@
 - [x] Update README with new feature
 - [x] Run lint/tests if available (not found)
 - [x] Commit changes
+- [x] Fix drive mount without sudo (use WSL root)
+- [x] Resize Drive Settings dialog
+- [x] Add tray PNG icons support

@@ -124,10 +124,10 @@ sealed class TrayAppContext : ApplicationContext
         LogUtil.Log("tray init");
         _settings = SettingsStore.Load();
         _autoAttachEnabled = _settings.AutoAttachUsb;
-        _greenIcon = CreateStatusIcon(Color.FromArgb(0, 180, 0));
-        _yellowIcon = CreateStatusIcon(Color.FromArgb(255, 185, 0));
-        _redIcon = CreateStatusIcon(Color.FromArgb(200, 0, 0));
-        _grayIcon = CreateStatusIcon(Color.FromArgb(120, 120, 120));
+        _greenIcon = CreateStatusIcon("icon-connected.png", Color.FromArgb(0, 180, 0));
+        _yellowIcon = CreateStatusIcon("icon-ready.png", Color.FromArgb(255, 185, 0));
+        _redIcon = CreateStatusIcon("icon-none.png", Color.FromArgb(200, 0, 0));
+        _grayIcon = CreateStatusIcon("icon-error.png", Color.FromArgb(120, 120, 120));
 
         _attachItem = new ToolStripMenuItem("Attach", null, (_, _) => RunAttach());
         _detachItem = new ToolStripMenuItem("Detach", null, (_, _) => RunDetach());
@@ -509,6 +509,28 @@ sealed class TrayAppContext : ApplicationContext
 
     static Icon CreateStatusIcon(Color color)
     {
+        return CreateStatusIcon(null, color);
+    }
+
+    static Icon CreateStatusIcon(string? pngName, Color color)
+    {
+        if (!string.IsNullOrWhiteSpace(pngName))
+        {
+            var png = ResolveAssetPath(pngName);
+            if (png != null)
+            {
+                try
+                {
+                    using var bmp = new Bitmap(png);
+                    return IconFromBitmap(bmp);
+                }
+                catch (Exception ex)
+                {
+                    LogUtil.Log("png fail " + ex.Message);
+                }
+            }
+        }
+
         var svgPath = Path.Combine(AppContext.BaseDirectory, "key.svg");
         if (File.Exists(svgPath))
         {
@@ -526,6 +548,15 @@ sealed class TrayAppContext : ApplicationContext
         }
 
         return CreateDotIcon(color);
+    }
+
+    static string? ResolveAssetPath(string fileName)
+    {
+        var direct = Path.Combine(AppContext.BaseDirectory, fileName);
+        if (File.Exists(direct)) return direct;
+        var img = Path.Combine(AppContext.BaseDirectory, "img", fileName);
+        if (File.Exists(img)) return img;
+        return null;
     }
 
     static Icon CreateDotIcon(Color color)
@@ -580,8 +611,8 @@ sealed class DriveSettingsForm : Form
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
-        Width = 420;
-        Height = 260;
+        Width = 460;
+        Height = 280;
 
         var distroLabel = new Label { Text = "WSL distro (blank = default):", Left = 12, Top = 16, Width = 360 };
         _distroBox = new TextBox { Left = 12, Top = 38, Width = 380, Text = _settings.WslDistro ?? string.Empty };
@@ -592,8 +623,8 @@ sealed class DriveSettingsForm : Form
         _autoMountBox = new CheckBox { Text = "Auto-mount new drives", Left = 12, Top = 130, Width = 200, Checked = _settings.AutoMountDrives };
         _autoUnmountBox = new CheckBox { Text = "Auto-unmount on removal", Left = 12, Top = 154, Width = 220, Checked = _settings.AutoUnmountDrives };
 
-        var ok = new Button { Text = "OK", Left = 232, Width = 75, Top = 185, DialogResult = DialogResult.OK };
-        var cancel = new Button { Text = "Cancel", Left = 317, Width = 75, Top = 185, DialogResult = DialogResult.Cancel };
+        var ok = new Button { Text = "OK", Left = 252, Width = 80, Top = 195, DialogResult = DialogResult.OK };
+        var cancel = new Button { Text = "Cancel", Left = 342, Width = 80, Top = 195, DialogResult = DialogResult.Cancel };
 
         ok.Click += (_, _) => ApplySettings();
 
@@ -736,7 +767,7 @@ static class WslUtil
     {
         var result = new HashSet<char>();
         var mountBase = SettingsStore.NormalizeMountBase(settings.MountBase);
-        var res = RunWsl(settings, ["sh", "-lc", $"grep -i ' drvfs ' /proc/mounts"]);
+        var res = RunWsl(settings, ["sh", "-lc", "grep -i ' drvfs ' /proc/mounts"]);
         if (res.ExitCode != 0 || string.IsNullOrWhiteSpace(res.Output)) return result;
 
         var lines = res.Output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
@@ -760,8 +791,15 @@ static class WslUtil
         var mountPointEsc = EscapeSh(mountPoint);
         var drive = $"{char.ToUpperInvariant(letter)}:";
         var driveEsc = EscapeSh(drive);
-        var cmd = $"mkdir -p {mountPointEsc} && mount -t drvfs {driveEsc} {mountPointEsc}";
-        var res = RunWsl(settings, ["sh", "-lc", cmd]);
+        var prep = RunWsl(settings, ["sh", "-lc", $"mkdir -p {mountPointEsc}"]);
+        if (prep.ExitCode != 0)
+        {
+            LogUtil.Log($"mkdir {letter}: exit {prep.ExitCode} {prep.Output}");
+            return;
+        }
+
+        var cmd = $"mount -t drvfs {driveEsc} {mountPointEsc}";
+        var res = RunWsl(settings, ["sh", "-lc", cmd], runAsRoot: true);
         LogUtil.Log($"mount {letter}: exit {res.ExitCode} {res.Output}");
     }
 
@@ -770,9 +808,13 @@ static class WslUtil
         var mountBase = SettingsStore.NormalizeMountBase(settings.MountBase);
         var mountPoint = $"{mountBase}/{char.ToLowerInvariant(letter)}";
         var mountPointEsc = EscapeSh(mountPoint);
-        var cmd = $"umount {mountPointEsc} && rmdir {mountPointEsc}";
-        var res = RunWsl(settings, ["sh", "-lc", cmd]);
+        var res = RunWsl(settings, ["sh", "-lc", $"umount {mountPointEsc}"], runAsRoot: true);
         LogUtil.Log($"umount {letter}: exit {res.ExitCode} {res.Output}");
+        var cleanup = RunWsl(settings, ["sh", "-lc", $"rmdir {mountPointEsc}"]);
+        if (cleanup.ExitCode != 0 && !string.IsNullOrWhiteSpace(cleanup.Output))
+        {
+            LogUtil.Log($"rmdir {letter}: exit {cleanup.ExitCode} {cleanup.Output}");
+        }
     }
 
     static string EscapeSh(string value)
@@ -780,7 +822,7 @@ static class WslUtil
         return "'" + value.Replace("'", "'\"'\"'") + "'";
     }
 
-    public static (int ExitCode, string Output) RunWsl(AppSettings settings, string[] args)
+    public static (int ExitCode, string Output) RunWsl(AppSettings settings, string[] args, bool runAsRoot = false)
     {
         try
         {
@@ -792,6 +834,12 @@ static class WslUtil
                 UseShellExecute = false,
                 CreateNoWindow = true,
             };
+
+            if (runAsRoot)
+            {
+                psi.ArgumentList.Add("-u");
+                psi.ArgumentList.Add("root");
+            }
 
             if (!string.IsNullOrWhiteSpace(settings.WslDistro))
             {

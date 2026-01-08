@@ -12,4 +12,8 @@
   <ItemGroup>
     <PackageReference Include="Svg" Version="3.4.4" />
   </ItemGroup>
+
+  <ItemGroup>
+    <None Include="img\\*.png" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
