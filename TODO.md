@@ -27,5 +27,5 @@
 - [x] Log settings at startup
 - [x] Auto-select running WSL distro
 - [x] Fix parsing of wsl -l -v header
-- [x] Harden header detection for spaced output
+- [x] Replace header parsing with `wsl -l --quiet` detection
 - [x] Fix build error: ShowCheckMargin cast

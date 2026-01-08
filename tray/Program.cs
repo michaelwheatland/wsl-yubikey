@@ -963,54 +963,24 @@ static class WslUtil
     public static string? ResolveActiveDistro(string? configured)
     {
         if (!string.IsNullOrWhiteSpace(configured)) return configured;
-        var res = RunWslRaw(["-l", "-v"]);
-        if (res.ExitCode != 0 || string.IsNullOrWhiteSpace(res.Output)) return null;
-        var lines = res.Output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
-        foreach (var line in lines)
-        {
-            var trimmed = line.Trim();
-            if (IsHeaderLine(trimmed)) continue;
-            if (trimmed.StartsWith("NAME", StringComparison.OrdinalIgnoreCase)) continue;
-            var cols = Regex.Split(trimmed, @"\s{2,}");
-            if (cols.Length < 2) continue;
-            var name = cols[0].TrimStart('*').Trim();
-            var state = cols[1].Trim();
-            if (state.Equals("Running", StringComparison.OrdinalIgnoreCase)) return name;
-        }
+        var running = RunWslRaw(new[] { "-l", "--running", "--quiet" });
+        var resolved = ExtractFirstNonEmptyLine(running.Output, running.ExitCode);
+        if (resolved != null) return resolved;
 
-        foreach (var line in lines)
-        {
-            var trimmed = line.Trim();
-            if (IsHeaderLine(trimmed)) continue;
-            if (trimmed.StartsWith("NAME", StringComparison.OrdinalIgnoreCase)) continue;
-            var parts = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length >= 2)
-            {
-                var name = parts[0].TrimStart('*').Trim();
-                var state = parts[1].Trim();
-                if (state.Equals("Running", StringComparison.OrdinalIgnoreCase)) return name;
-            }
-        }
-
-        foreach (var line in lines)
-        {
-            var trimmed = line.Trim();
-            if (IsHeaderLine(trimmed)) continue;
-            if (trimmed.StartsWith("NAME", StringComparison.OrdinalIgnoreCase)) continue;
-            var cols = Regex.Split(trimmed, @"\s{2,}");
-            if (cols.Length < 1) continue;
-            var name = cols[0].TrimStart('*').Trim();
-            if (!string.IsNullOrWhiteSpace(name)) return name;
-        }
-
-        return null;
+        var all = RunWslRaw(new[] { "-l", "--quiet" });
+        return ExtractFirstNonEmptyLine(all.Output, all.ExitCode);
     }
 
-    static bool IsHeaderLine(string line)
+    static string? ExtractFirstNonEmptyLine(string? output, int exitCode)
     {
-        if (string.IsNullOrWhiteSpace(line)) return false;
-        var noSpace = new string(line.Where(c => !char.IsWhiteSpace(c)).ToArray());
-        return noSpace.Equals("NAMESTATEVERSION", StringComparison.OrdinalIgnoreCase);
+        if (exitCode != 0 || string.IsNullOrWhiteSpace(output)) return null;
+        foreach (var line in output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            var trimmed = line.Trim();
+            if (string.IsNullOrWhiteSpace(trimmed)) continue;
+            return trimmed.TrimStart('*').Trim();
+        }
+        return null;
     }
 
     static (int ExitCode, string Output) RunWslRaw(string[] args)
