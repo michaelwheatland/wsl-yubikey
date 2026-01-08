@@ -976,11 +976,17 @@ static class WslUtil
         if (exitCode != 0 || string.IsNullOrWhiteSpace(output)) return null;
         foreach (var line in output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
         {
-            var trimmed = line.Trim();
+            var trimmed = CleanLine(line);
             if (string.IsNullOrWhiteSpace(trimmed)) continue;
             return trimmed.TrimStart('*').Trim();
         }
         return null;
+    }
+
+    static string CleanLine(string line)
+    {
+        var filtered = new string(line.Where(c => !char.IsControl(c)).ToArray());
+        return filtered;
     }
 
     static (int ExitCode, string Output) RunWslRaw(string[] args)
