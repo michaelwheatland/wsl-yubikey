@@ -39,6 +39,11 @@ WslYubikeyTray.exe
 ```
 Note: GitHub rejects blobs >100MB. Use the small build for GitHub mirrors.
 Icon svg copied to repo root as `key.svg`. If missing, app falls back to dot icon.
+Optional tray PNG icons (place in `tray/img` or beside exe):
+- `icon-none.png` (not detected)
+- `icon-ready.png` (detected not attached)
+- `icon-connected.png` (attached)
+- `icon-error.png` (error)
 
 ## Download (prebuilt)
 Download: `www.wheatland.com.au/code/wsl-yubi`

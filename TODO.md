@@ -13,3 +13,8 @@
 - [x] Fix drive mount without sudo (use WSL root)
 - [x] Resize Drive Settings dialog
 - [x] Add tray PNG icons support
+- [x] Fix WSL drive mount permission issues (root mkdir/umount)
+- [x] Resize Drive Settings dialog (buttons visible)
+- [x] Resize PNG icons to 16x16 on load
+- [x] Copy img assets in build.ps1
+- [x] Show checkmarks in Drives menu

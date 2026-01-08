@@ -139,7 +139,7 @@ sealed class TrayAppContext : ApplicationContext
         _driveAutoUnmountItem = new ToolStripMenuItem("Auto-unmount on removal", null, (_, _) => ToggleAutoUnmountDrives()) { CheckOnClick = true };
         _driveSettingsItem = new ToolStripMenuItem("Drive settings", null, (_, _) => ShowDriveSettings());
         _driveRefreshItem = new ToolStripMenuItem("Refresh drives", null, (_, _) => _ = RefreshDrivesAsync(force: true));
-        _driveMenuItem = new ToolStripMenuItem("Drive mount points");
+        _driveMenuItem = new ToolStripMenuItem("Drives");
 
         _aboutItem = new ToolStripMenuItem("About", null, (_, _) => ShowAbout());
 
@@ -172,6 +172,7 @@ sealed class TrayAppContext : ApplicationContext
             Icon = _grayIcon,
         };
         _icon.DoubleClick += (_, _) => ToggleAttachDetach();
+        _driveMenuItem.DropDown.ShowCheckMargin = true;
 
         _timer = new Timer { Interval = PollMs };
         _timer.Tick += async (_, _) => await OnTickAsync();
@@ -521,7 +522,15 @@ sealed class TrayAppContext : ApplicationContext
             {
                 try
                 {
-                    using var bmp = new Bitmap(png);
+                    using var raw = new Bitmap(png);
+                    using var bmp = new Bitmap(16, 16);
+                    using (var g = Graphics.FromImage(bmp))
+                    {
+                        g.SmoothingMode = SmoothingMode.AntiAlias;
+                        g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                        g.Clear(Color.Transparent);
+                        g.DrawImage(raw, 0, 0, 16, 16);
+                    }
                     return IconFromBitmap(bmp);
                 }
                 catch (Exception ex)
@@ -611,8 +620,8 @@ sealed class DriveSettingsForm : Form
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
-        Width = 460;
-        Height = 280;
+        Width = 520;
+        Height = 300;
 
         var distroLabel = new Label { Text = "WSL distro (blank = default):", Left = 12, Top = 16, Width = 360 };
         _distroBox = new TextBox { Left = 12, Top = 38, Width = 380, Text = _settings.WslDistro ?? string.Empty };
@@ -623,8 +632,8 @@ sealed class DriveSettingsForm : Form
         _autoMountBox = new CheckBox { Text = "Auto-mount new drives", Left = 12, Top = 130, Width = 200, Checked = _settings.AutoMountDrives };
         _autoUnmountBox = new CheckBox { Text = "Auto-unmount on removal", Left = 12, Top = 154, Width = 220, Checked = _settings.AutoUnmountDrives };
 
-        var ok = new Button { Text = "OK", Left = 252, Width = 80, Top = 195, DialogResult = DialogResult.OK };
-        var cancel = new Button { Text = "Cancel", Left = 342, Width = 80, Top = 195, DialogResult = DialogResult.Cancel };
+        var ok = new Button { Text = "OK", Left = 300, Width = 85, Top = 205, DialogResult = DialogResult.OK };
+        var cancel = new Button { Text = "Cancel", Left = 395, Width = 85, Top = 205, DialogResult = DialogResult.Cancel };
 
         ok.Click += (_, _) => ApplySettings();
 
@@ -791,7 +800,7 @@ static class WslUtil
         var mountPointEsc = EscapeSh(mountPoint);
         var drive = $"{char.ToUpperInvariant(letter)}:";
         var driveEsc = EscapeSh(drive);
-        var prep = RunWsl(settings, ["sh", "-lc", $"mkdir -p {mountPointEsc}"]);
+        var prep = RunWsl(settings, ["sh", "-lc", $"mkdir -p {mountPointEsc}"], runAsRoot: true);
         if (prep.ExitCode != 0)
         {
             LogUtil.Log($"mkdir {letter}: exit {prep.ExitCode} {prep.Output}");
@@ -810,7 +819,7 @@ static class WslUtil
         var mountPointEsc = EscapeSh(mountPoint);
         var res = RunWsl(settings, ["sh", "-lc", $"umount {mountPointEsc}"], runAsRoot: true);
         LogUtil.Log($"umount {letter}: exit {res.ExitCode} {res.Output}");
-        var cleanup = RunWsl(settings, ["sh", "-lc", $"rmdir {mountPointEsc}"]);
+        var cleanup = RunWsl(settings, ["sh", "-lc", $"rmdir {mountPointEsc}"], runAsRoot: true);
         if (cleanup.ExitCode != 0 && !string.IsNullOrWhiteSpace(cleanup.Output))
         {
             LogUtil.Log($"rmdir {letter}: exit {cleanup.ExitCode} {cleanup.Output}");

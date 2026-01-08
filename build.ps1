@@ -25,7 +25,10 @@ $exeSrc = Join-Path $publishDir $exeName
 $exeDst = Join-Path $root $exeName
 $svgSrc = Join-Path $tray "key.svg"
 $svgDst = Join-Path $root "key.svg"
+$imgSrc = Join-Path $tray "img"
+$imgDst = Join-Path $root "img"
 
 Copy-Item $exeSrc $exeDst -Force
 if (Test-Path $svgSrc) { Copy-Item $svgSrc $svgDst -Force }
+if (Test-Path $imgSrc) { Copy-Item $imgSrc $imgDst -Recurse -Force }
 Write-Host "Copied to $exeDst"
