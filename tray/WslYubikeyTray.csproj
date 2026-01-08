@@ -15,5 +15,6 @@
 
   <ItemGroup>
     <None Include="img\\*.png" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="key.svg" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

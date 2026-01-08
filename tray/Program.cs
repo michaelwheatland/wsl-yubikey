@@ -76,8 +76,11 @@ sealed class TrayAppContext : ApplicationContext
 {
     const int PollMs = 2000;
     const string AppTitle = "WSL 2FA Connector";
-    const int DrivePollMs = 5000;
-    const int WslMountPollMs = 15000;
+    const int DrivePollMsIdle = 20000;
+    const int DrivePollMsBusy = 2000;
+    const int WslMountPollMsIdle = 30000;
+    const int WslMountPollMsBusy = 5000;
+    const int DriveBurstSeconds = 20;
 
     readonly string[] _aliases =
     [
@@ -118,6 +121,7 @@ sealed class TrayAppContext : ApplicationContext
     HashSet<char> _knownDrives = new();
     HashSet<char> _mountedDrives = new();
     bool _driveInitialized;
+    DateTime _driveBurstUntil = DateTime.MinValue;
 
     public TrayAppContext()
     {
@@ -374,7 +378,9 @@ sealed class TrayAppContext : ApplicationContext
     async Task RefreshDrivesAsync(bool force)
     {
         var now = DateTime.UtcNow;
-        if (!force && (now - _lastDrivePoll).TotalMilliseconds < DrivePollMs) return;
+        var inBurst = now < _driveBurstUntil;
+        var drivePollMs = inBurst ? DrivePollMsBusy : DrivePollMsIdle;
+        if (!force && (now - _lastDrivePoll).TotalMilliseconds < drivePollMs) return;
         _lastDrivePoll = now;
 
         var present = DriveUtil.GetPresentDriveLetters();
@@ -384,7 +390,8 @@ sealed class TrayAppContext : ApplicationContext
             _driveInitialized = true;
         }
 
-        if (force || (now - _lastWslMountPoll).TotalMilliseconds >= WslMountPollMs)
+        var mountPollMs = inBurst ? WslMountPollMsBusy : WslMountPollMsIdle;
+        if (force || (now - _lastWslMountPoll).TotalMilliseconds >= mountPollMs)
         {
             _lastWslMountPoll = now;
             _mountedDrives = await Task.Run(() => WslUtil.GetMountedDrvfsLetters(_settings));
@@ -407,6 +414,7 @@ sealed class TrayAppContext : ApplicationContext
                 await Task.Run(() => WslUtil.MountDrive(letter, _settings));
             }
             _mountedDrives = await Task.Run(() => WslUtil.GetMountedDrvfsLetters(_settings));
+            _driveBurstUntil = DateTime.UtcNow.AddSeconds(DriveBurstSeconds);
         }
 
         if (_settings.AutoUnmountDrives && removed.Count > 0)
@@ -419,6 +427,7 @@ sealed class TrayAppContext : ApplicationContext
                 }
             }
             _mountedDrives = await Task.Run(() => WslUtil.GetMountedDrvfsLetters(_settings));
+            _driveBurstUntil = DateTime.UtcNow.AddSeconds(DriveBurstSeconds);
         }
 
         if (added.Count > 0 || removed.Count > 0)
@@ -467,6 +476,7 @@ sealed class TrayAppContext : ApplicationContext
 
             _mountedDrives = await Task.Run(() => WslUtil.GetMountedDrvfsLetters(_settings));
             UpdateDriveMenu(DriveUtil.GetPresentDriveLetters(), _mountedDrives);
+            _driveBurstUntil = DateTime.UtcNow.AddSeconds(DriveBurstSeconds);
         }
         finally
         {
@@ -540,6 +550,10 @@ sealed class TrayAppContext : ApplicationContext
                 {
                     LogUtil.Log("png fail " + ex.Message);
                 }
+            }
+            else
+            {
+                LogUtil.Log("png missing " + pngName);
             }
         }
 
@@ -779,10 +793,24 @@ static class WslUtil
     {
         var result = new HashSet<char>();
         var mountBase = SettingsStore.NormalizeMountBase(settings.MountBase);
-        var res = RunWsl(settings, ["sh", "-lc", "grep -i ' drvfs ' /proc/mounts"]);
-        if (res.ExitCode != 0 || string.IsNullOrWhiteSpace(res.Output)) return result;
+        var res = RunWsl(settings, ["sh", "-lc", "findmnt -rn -t drvfs -o TARGET"]);
+        if (res.ExitCode == 0 && !string.IsNullOrWhiteSpace(res.Output))
+        {
+            var targets = res.Output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
+            foreach (var target in targets)
+            {
+                var mountPoint = target.Trim();
+                if (!mountPoint.StartsWith(mountBase + "/", StringComparison.OrdinalIgnoreCase)) continue;
+                var letter = char.ToUpperInvariant(mountPoint.Substring(mountBase.Length + 1).FirstOrDefault());
+                if (letter >= 'A' && letter <= 'Z') result.Add(letter);
+            }
+            return result;
+        }
 
-        var lines = res.Output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
+        var fallback = RunWsl(settings, ["sh", "-lc", "grep -i ' drvfs ' /proc/mounts"]);
+        if (fallback.ExitCode != 0 || string.IsNullOrWhiteSpace(fallback.Output)) return result;
+
+        var lines = fallback.Output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
         foreach (var line in lines)
         {
             var parts = line.Split(' ');

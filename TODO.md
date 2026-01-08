@@ -18,4 +18,7 @@
 - [x] Resize PNG icons to 16x16 on load
 - [x] Copy img assets in build.ps1
 - [x] Show checkmarks in Drives menu
+- [x] Add slow drive polling with burst after actions
+- [x] Use findmnt for drvfs detection
+- [x] Copy key.svg to publish output
 - [x] Fix build error: ShowCheckMargin cast
