@@ -18,3 +18,4 @@
 - [x] Resize PNG icons to 16x16 on load
 - [x] Copy img assets in build.ps1
 - [x] Show checkmarks in Drives menu
+- [x] Fix build error: ShowCheckMargin cast

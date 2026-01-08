@@ -172,7 +172,10 @@ sealed class TrayAppContext : ApplicationContext
             Icon = _grayIcon,
         };
         _icon.DoubleClick += (_, _) => ToggleAttachDetach();
-        _driveMenuItem.DropDown.ShowCheckMargin = true;
+        if (_driveMenuItem.DropDown is ToolStripDropDownMenu driveMenu)
+        {
+            driveMenu.ShowCheckMargin = true;
+        }
 
         _timer = new Timer { Interval = PollMs };
         _timer.Tick += async (_, _) => await OnTickAsync();
