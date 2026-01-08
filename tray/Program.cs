@@ -969,6 +969,7 @@ static class WslUtil
         foreach (var line in lines)
         {
             var trimmed = line.Trim();
+            if (trimmed.Replace(" ", "").Equals("NAMESTATEVERSION", StringComparison.OrdinalIgnoreCase)) continue;
             if (trimmed.StartsWith("NAME", StringComparison.OrdinalIgnoreCase)) continue;
             var cols = Regex.Split(trimmed, @"\s{2,}");
             if (cols.Length < 2) continue;
@@ -980,6 +981,21 @@ static class WslUtil
         foreach (var line in lines)
         {
             var trimmed = line.Trim();
+            if (trimmed.Replace(" ", "").Equals("NAMESTATEVERSION", StringComparison.OrdinalIgnoreCase)) continue;
+            if (trimmed.StartsWith("NAME", StringComparison.OrdinalIgnoreCase)) continue;
+            var parts = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length >= 2)
+            {
+                var name = parts[0].TrimStart('*').Trim();
+                var state = parts[1].Trim();
+                if (state.Equals("Running", StringComparison.OrdinalIgnoreCase)) return name;
+            }
+        }
+
+        foreach (var line in lines)
+        {
+            var trimmed = line.Trim();
+            if (trimmed.Replace(" ", "").Equals("NAMESTATEVERSION", StringComparison.OrdinalIgnoreCase)) continue;
             if (trimmed.StartsWith("NAME", StringComparison.OrdinalIgnoreCase)) continue;
             var cols = Regex.Split(trimmed, @"\s{2,}");
             if (cols.Length < 1) continue;

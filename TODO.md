@@ -26,4 +26,5 @@
 - [x] Improve drvfs detection via mount -t drvfs
 - [x] Log settings at startup
 - [x] Auto-select running WSL distro
+- [x] Fix parsing of wsl -l -v header
 - [x] Fix build error: ShowCheckMargin cast
