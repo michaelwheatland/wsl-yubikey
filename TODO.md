@@ -23,4 +23,6 @@
 - [x] Copy key.svg to publish output
 - [x] Add detailed wsl command logging
 - [x] Fix wsl command separator when no distro set
+- [x] Improve drvfs detection via mount -t drvfs
+- [x] Log settings at startup
 - [x] Fix build error: ShowCheckMargin cast

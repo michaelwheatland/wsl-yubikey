@@ -128,6 +128,7 @@ sealed class TrayAppContext : ApplicationContext
         LogUtil.Log("tray init");
         _settings = SettingsStore.Load();
         _autoAttachEnabled = _settings.AutoAttachUsb;
+        LogUtil.Log($"settings distro='{_settings.WslDistro ?? ""}' mountBase='{_settings.MountBase}'");
         _greenIcon = CreateStatusIcon("icon-connected.png", Color.FromArgb(0, 180, 0));
         _yellowIcon = CreateStatusIcon("icon-ready.png", Color.FromArgb(255, 185, 0));
         _redIcon = CreateStatusIcon("icon-none.png", Color.FromArgb(200, 0, 0));
@@ -793,11 +794,19 @@ static class WslUtil
     {
         var result = new HashSet<char>();
         var mountBase = SettingsStore.NormalizeMountBase(settings.MountBase);
-        var res = RunWsl(settings, ["sh", "-lc", "findmnt -rn -t drvfs -o TARGET"]);
+        var res = RunWsl(settings, ["sh", "-lc", "mount -t drvfs"]);
         if (res.ExitCode == 0 && !string.IsNullOrWhiteSpace(res.Output))
         {
-            LogUtil.Log("drvfs findmnt ok: " + res.Output.Replace("\n", "|"));
-            var targets = res.Output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
+            LogUtil.Log("drvfs mount list: " + res.Output.Replace("\n", "|"));
+            ParseDrvfsMountOutput(res.Output, mountBase, result);
+            return result;
+        }
+
+        var findmnt = RunWsl(settings, ["sh", "-lc", "findmnt -rn -t drvfs -o TARGET"]);
+        if (findmnt.ExitCode == 0 && !string.IsNullOrWhiteSpace(findmnt.Output))
+        {
+            LogUtil.Log("drvfs findmnt ok: " + findmnt.Output.Replace("\n", "|"));
+            var targets = findmnt.Output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
             foreach (var target in targets)
             {
                 var mountPoint = target.Trim();
@@ -824,6 +833,21 @@ static class WslUtil
         }
 
         return result;
+    }
+
+    static void ParseDrvfsMountOutput(string output, string mountBase, HashSet<char> result)
+    {
+        var lines = output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
+        foreach (var line in lines)
+        {
+            var onIdx = line.IndexOf(" on ", StringComparison.OrdinalIgnoreCase);
+            var typeIdx = line.IndexOf(" type ", StringComparison.OrdinalIgnoreCase);
+            if (onIdx < 0 || typeIdx < 0 || typeIdx <= onIdx + 4) continue;
+            var mountPoint = line.Substring(onIdx + 4, typeIdx - (onIdx + 4));
+            if (!mountPoint.StartsWith(mountBase + "/", StringComparison.OrdinalIgnoreCase)) continue;
+            var letter = char.ToUpperInvariant(mountPoint.Substring(mountBase.Length + 1).FirstOrDefault());
+            if (letter >= 'A' && letter <= 'Z') result.Add(letter);
+        }
     }
 
     public static void MountDrive(char letter, AppSettings settings)
